@@ -7,106 +7,6 @@
     <script src="https://cdn.tailwindcss.com"></script>
     <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
     
-    <!-- Firebase SDK -->
-    <script type="module">
-        import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js';
-        import { getFirestore, collection, addDoc, onSnapshot, deleteDoc, doc, updateDoc, orderBy, query } from 'https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js';
-        
-        // Firebase 설정 (공개 키이므로 안전)
-        const firebaseConfig = {
-            apiKey: "AIzaSyDummy-Key-For-Demo-Purpose-Only",
-            authDomain: "cafe-kiosk-demo.firebaseapp.com",
-            projectId: "cafe-kiosk-demo",
-            storageBucket: "cafe-kiosk-demo.appspot.com",
-            messagingSenderId: "123456789",
-            appId: "1:123456789:web:abcdef123456789"
-        };
-        
-        // Firebase 대신 로컬 저장소 + 실시간 시뮬레이션 사용
-        window.firestoreEmulation = {
-            orders: JSON.parse(localStorage.getItem('globalOrders') || '[]'),
-            menus: JSON.parse(localStorage.getItem('globalMenus') || '[]'),
-            stats: JSON.parse(localStorage.getItem('globalStats') || '{}'),
-            listeners: [],
-            
-            addDoc: function(collectionName, data) {
-                const id = Date.now().toString();
-                const docData = { ...data, id, timestamp: new Date().toISOString() };
-                
-                if (collectionName === 'orders') {
-                    this.orders.push(docData);
-                    localStorage.setItem('globalOrders', JSON.stringify(this.orders));
-                } else if (collectionName === 'menus') {
-                    this.menus.push(docData);
-                    localStorage.setItem('globalMenus', JSON.stringify(this.menus));
-                } else if (collectionName === 'stats') {
-                    this.stats[id] = docData;
-                    localStorage.setItem('globalStats', JSON.stringify(this.stats));
-                }
-                
-                // 리스너들에게 알림
-                this.notifyListeners(collectionName);
-                return Promise.resolve({ id });
-            },
-            
-            deleteDoc: function(collectionName, docId) {
-                if (collectionName === 'orders') {
-                    this.orders = this.orders.filter(order => order.id !== docId);
-                    localStorage.setItem('globalOrders', JSON.stringify(this.orders));
-                }
-                this.notifyListeners(collectionName);
-                return Promise.resolve();
-            },
-            
-            onSnapshot: function(collectionName, callback) {
-                const listener = { collection: collectionName, callback };
-                this.listeners.push(listener);
-                
-                // 초기 데이터 전송
-                if (collectionName === 'orders') {
-                    callback({ docs: this.orders.map(order => ({ data: () => order, id: order.id })) });
-                } else if (collectionName === 'menus') {
-                    callback({ docs: this.menus.map(menu => ({ data: () => menu, id: menu.id })) });
-                }
-                
-                return () => {
-                    const index = this.listeners.indexOf(listener);
-                    if (index > -1) this.listeners.splice(index, 1);
-                };
-            },
-            
-            notifyListeners: function(collectionName) {
-                this.listeners
-                    .filter(listener => listener.collection === collectionName)
-                    .forEach(listener => {
-                        if (collectionName === 'orders') {
-                            listener.callback({ docs: this.orders.map(order => ({ data: () => order, id: order.id })) });
-                        } else if (collectionName === 'menus') {
-                            listener.callback({ docs: this.menus.map(menu => ({ data: () => menu, id: menu.id })) });
-                        }
-                    });
-            }
-        };
-        
-        // 실시간 동기화 시뮬레이션
-        setInterval(() => {
-            // 다른 탭/기기의 변경사항 확인
-            const currentOrders = JSON.parse(localStorage.getItem('globalOrders') || '[]');
-            if (JSON.stringify(currentOrders) !== JSON.stringify(window.firestoreEmulation.orders)) {
-                window.firestoreEmulation.orders = currentOrders;
-                window.firestoreEmulation.notifyListeners('orders');
-            }
-            
-            const currentMenus = JSON.parse(localStorage.getItem('globalMenus') || '[]');
-            if (JSON.stringify(currentMenus) !== JSON.stringify(window.firestoreEmulation.menus)) {
-                window.firestoreEmulation.menus = currentMenus;
-                window.firestoreEmulation.notifyListeners('menus');
-            }
-        }, 1000); // 1초마다 동기화 확인
-        
-        window.firebaseReady = true;
-    </script>
-    
     <style>
         body {
             font-family: 'Noto Sans KR', sans-serif;
@@ -305,16 +205,16 @@
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-2xl font-bold">실시간 주문 확인</h2>
                     <div class="flex gap-2">
+                        <button onclick="refreshOrders()" class="btn-primary">
+                            <i class="fas fa-sync-alt"></i> 주문 새로고침
+                        </button>
                         <button onclick="resetOrderNumber()" class="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors">
                             <i class="fas fa-redo"></i> 주문 번호 초기화
                         </button>
                     </div>
                 </div>
                 <div id="ordersList" class="space-y-3">
-                    <div class="text-center py-8">
-                        <div class="animate-spin inline-block w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full mb-4"></div>
-                        <p class="text-gray-500">실시간 주문 데이터를 불러오는 중...</p>
-                    </div>
+                    <p class="text-gray-500 text-center py-8">주문이 없습니다</p>
                 </div>
             </div>
 
@@ -346,9 +246,14 @@
             <div id="adminDaily" class="admin-tab hidden">
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-2xl font-bold">일일 결산</h2>
-                    <button onclick="completeDailySettlement()" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors">
-                        <i class="fas fa-check"></i> 당일 정산 완료
-                    </button>
+                    <div class="flex gap-2">
+                        <button onclick="refreshDaily()" class="btn-primary">
+                            <i class="fas fa-sync-alt"></i> 새로고침
+                        </button>
+                        <button onclick="completeDailySettlement()" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors">
+                            <i class="fas fa-check"></i> 당일 정산 완료
+                        </button>
+                    </div>
                 </div>
                 <div id="dailyStats" class="bg-white p-6 rounded-2xl shadow-lg">
                     <!-- 일일 통계가 여기에 표시됩니다 -->
@@ -391,94 +296,65 @@
         let currentOrders = [];
         let dailyStats = JSON.parse(localStorage.getItem('dailyStats') || '{}');
         let monthlyStats = JSON.parse(localStorage.getItem('monthlyStats') || '{}');
-        let ordersUnsubscribe = null;
-        let menusUnsubscribe = null;
 
-        // Firebase 초기화 대기
-        function waitForFirebase() {
-            return new Promise((resolve) => {
-                const check = () => {
-                    if (window.firebaseReady) {
-                        resolve();
-                    } else {
-                        setTimeout(check, 100);
-                    }
-                };
-                check();
-            });
+        // 실시간 동기화를 위한 글로벌 저장소
+        let globalOrderKey = 'globalCafeOrders';
+        let globalMenuKey = 'globalCafeMenus';
+
+        // 초기 메뉴 데이터
+        const defaultMenus = [
+            { id: 'menu1', name: '아메리카노(아이스)', price: 2000, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iIzhhNzk2OCIvPjwvc3ZnPg==' },
+            { id: 'menu2', name: '카페라떼', price: 3000, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iI2Q0YWU5MSIvPjwvc3ZnPg==' },
+            { id: 'menu3', name: '카푸치노', price: 3500, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iI2NkOGU2ZiIvPjwvc3ZnPg==' },
+            { id: 'menu4', name: '바닐라라떼', price: 4000, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iI2Y0ZTJkNyIvPjwvc3ZnPg==' },
+            { id: 'menu5', name: '오렌지주스', price: 2500, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjgiIGZpbGw9IiNmZmE1MDAiLz48L3N2Zz4=' },
+            { id: 'menu6', name: '사과주스', price: 2500, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjgiIGZpbGw9IiNmZjU3MjIiLz48L3N2Zz4=' }
+        ];
+
+        // 초기화
+        function initializeData() {
+            // 메뉴 초기화
+            let storedMenus = JSON.parse(localStorage.getItem(globalMenuKey) || '[]');
+            if (storedMenus.length === 0) {
+                menuItems = [...defaultMenus];
+                localStorage.setItem(globalMenuKey, JSON.stringify(menuItems));
+            } else {
+                menuItems = storedMenus;
+            }
+
+            // 주문 초기화
+            currentOrders = JSON.parse(localStorage.getItem(globalOrderKey) || '[]');
+            
+            renderMenuGrid();
+            updateCartDisplay();
         }
 
-        // 초기 메뉴 설정
-        async function initializeDefaultMenus() {
-            if (window.firestoreEmulation.menus.length === 0) {
-                const defaultMenus = [
-                    { name: '아메리카노(아이스)', price: 2000, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iIzhhNzk2OCIvPjwvc3ZnPg==' },
-                    { name: '카페라떼', price: 3000, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iI2Q0YWU5MSIvPjwvc3ZnPg==' },
-                    { name: '카푸치노', price: 3500, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iI2NkOGU2ZiIvPjwvc3ZnPg==' },
-                    { name: '바닐라라떼', price: 4000, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxwYXRoIGQ9Ik03IDEwVjloNFY3SDV2M2gxNHYzaC02djFoNHY2YzAgMS4xLS45IDItMiAySDljLTEuMSAwLTItLjktMi0ydi02eiIgZmlsbD0iI2Y0ZTJkNyIvPjwvc3ZnPg==' },
-                    { name: '오렌지주스', price: 2500, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjgiIGZpbGw9IiNmZmE1MDAiLz48L3N2Zz4=' },
-                    { name: '사과주스', price: 2500, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjgiIGZpbGw9IiNmZjU3MjIiLz48L3N2Zz4=' }
-                ];
-                
-                for (const menu of defaultMenus) {
-                    await window.firestoreEmulation.addDoc('menus', menu);
-                }
+        // 실시간 동기화 체크
+        function checkForUpdates() {
+            // 주문 업데이트 체크
+            const latestOrders = JSON.parse(localStorage.getItem(globalOrderKey) || '[]');
+            if (JSON.stringify(latestOrders) !== JSON.stringify(currentOrders)) {
+                currentOrders = latestOrders;
+                updateOrdersList();
+                updateDailyStats();
+            }
+
+            // 메뉴 업데이트 체크
+            const latestMenus = JSON.parse(localStorage.getItem(globalMenuKey) || '[]');
+            if (JSON.stringify(latestMenus) !== JSON.stringify(menuItems)) {
+                menuItems = latestMenus;
+                renderMenuGrid();
+                renderMenuManagement();
             }
         }
 
-        // 실시간 주문 리스너 설정
-        function setupOrdersListener() {
-            if (ordersUnsubscribe) ordersUnsubscribe();
-            
-            ordersUnsubscribe = window.firestoreEmulation.onSnapshot('orders', (snapshot) => {
-                currentOrders = [];
-                snapshot.docs.forEach((doc) => {
-                    currentOrders.push({ id: doc.id, ...doc.data() });
-                });
-                
-                // 주문번호 순으로 정렬
-                currentOrders.sort((a, b) => a.orderNumber - b.orderNumber);
-                
-                // 관리자 모드에서 주문 목록 업데이트
-                if (!document.getElementById('adminMode').classList.contains('hidden')) {
-                    updateOrdersList();
-                }
-                
-                // 실시간 통계 업데이트
-                updateDailyStats();
-            });
-        }
-
-        // 실시간 메뉴 리스너 설정
-        function setupMenusListener() {
-            if (menusUnsubscribe) menusUnsubscribe();
-            
-            menusUnsubscribe = window.firestoreEmulation.onSnapshot('menus', (snapshot) => {
-                menuItems = [];
-                snapshot.docs.forEach((doc) => {
-                    menuItems.push({ id: doc.id, ...doc.data() });
-                });
-                
-                // 메뉴 그리드 업데이트
-                renderMenuGrid();
-                
-                // 관리자 모드에서 메뉴 목록 업데이트
-                if (!document.getElementById('adminMenu').classList.contains('hidden')) {
-                    renderMenuManagement();
-                }
-            });
-        }
-
         // 페이지 로드 시 초기화
-        document.addEventListener('DOMContentLoaded', async function() {
-            await waitForFirebase();
-            await initializeDefaultMenus();
+        document.addEventListener('DOMContentLoaded', function() {
+            initializeData();
             
-            setupOrdersListener();
-            setupMenusListener();
-            updateCartDisplay();
+            // 1초마다 동기화 체크
+            setInterval(checkForUpdates, 1000);
             
-            // 동기화 상태 표시
             updateSyncIndicator();
         });
 
@@ -502,9 +378,6 @@
             menuItems.forEach(menu => {
                 const menuCard = document.createElement('div');
                 menuCard.className = 'menu-card p-4 text-center';
-                menuCard.setAttribute('data-id', menu.id);
-                menuCard.setAttribute('data-name', menu.name);
-                menuCard.setAttribute('data-price', menu.price);
                 
                 menuCard.innerHTML = `
                     <div class="menu-image mx-auto mb-3">
@@ -514,6 +387,7 @@
                     <p class="text-blue-600 font-bold">${menu.price === 0 ? '무료' : menu.price.toLocaleString() + '원'}</p>
                 `;
                 
+                // 클릭 이벤트 추가 (올바른 메뉴 정보 전달)
                 menuCard.addEventListener('click', function() {
                     addToCart(menu.id, menu.name, menu.price);
                 });
@@ -522,7 +396,7 @@
             });
         }
 
-        // 장바구니에 추가
+        // 장바구니에 추가 (수정: 올바른 메뉴 식별)
         function addToCart(menuId, menuName, menuPrice) {
             const existingItem = currentCart.find(item => item.id === menuId);
             
@@ -606,14 +480,15 @@
             updateCartDisplay();
         }
 
-        // 주문하기 (실시간 동기화)
-        async function placeOrder() {
+        // 주문하기 (실시간 동기화 수정)
+        function placeOrder() {
             if (currentCart.length === 0) return;
             
             orderCounter += 1;
             const orderNumber = orderCounter.toString().padStart(3, '0');
             
             const order = {
+                id: Date.now().toString(),
                 orderNumber: orderCounter,
                 number: orderNumber,
                 items: [...currentCart],
@@ -622,28 +497,21 @@
                 status: 'pending'
             };
             
-            try {
-                // Firestore에 주문 저장 (실시간 동기화)
-                await window.firestoreEmulation.addDoc('orders', order);
-                
-                // 로컬 카운터 업데이트
-                localStorage.setItem('orderCounter', orderCounter.toString());
-                
-                // 통계 업데이트
-                updateStats(order);
-                
-                // 주문 완료 표시
-                document.getElementById('orderNumber').textContent = '#' + orderNumber;
-                document.getElementById('orderCompleted').classList.remove('hidden');
-                document.getElementById('orderCompleted').classList.add('flex');
-                
-                // 장바구니 비우기
-                clearCart();
-                
-            } catch (error) {
-                console.error('주문 저장 실패:', error);
-                alert('주문 처리 중 오류가 발생했습니다. 다시 시도해주세요.');
-            }
+            // 글로벌 주문 목록에 추가
+            currentOrders.push(order);
+            localStorage.setItem(globalOrderKey, JSON.stringify(currentOrders));
+            localStorage.setItem('orderCounter', orderCounter.toString());
+            
+            // 통계 업데이트
+            updateStats(order);
+            
+            // 주문 완료 표시
+            document.getElementById('orderNumber').textContent = '#' + orderNumber;
+            document.getElementById('orderCompleted').classList.remove('hidden');
+            document.getElementById('orderCompleted').classList.add('flex');
+            
+            // 장바구니 비우기
+            clearCart();
         }
 
         // 통계 업데이트
@@ -679,7 +547,7 @@
             localStorage.setItem('monthlyStats', JSON.stringify(monthlyStats));
         }
 
-        // 주문 목록 업데이트 (실시간)
+        // 주문 목록 업데이트 (수정: 새로고침 버튼 추가)
         function updateOrdersList() {
             const ordersList = document.getElementById('ordersList');
             
@@ -690,7 +558,7 @@
             
             let html = '';
             currentOrders.forEach(order => {
-                const isNew = (Date.now() - new Date(order.timestamp).getTime()) < 10000; // 10초 이내 주문
+                const isNew = (Date.now() - new Date(order.timestamp).getTime()) < 30000; // 30초 이내 주문
                 html += `
                     <div class="order-item ${isNew ? 'new-order' : ''}">
                         <div class="flex justify-between items-start mb-3">
@@ -724,13 +592,17 @@
             ordersList.innerHTML = html;
         }
 
+        // 주문 새로고침 (수정)
+        function refreshOrders() {
+            currentOrders = JSON.parse(localStorage.getItem(globalOrderKey) || '[]');
+            updateOrdersList();
+        }
+
         // 주문 완료 처리 (실시간 동기화)
-        async function completeOrder(orderId) {
-            try {
-                await window.firestoreEmulation.deleteDoc('orders', orderId);
-            } catch (error) {
-                console.error('주문 완료 처리 실패:', error);
-            }
+        function completeOrder(orderId) {
+            currentOrders = currentOrders.filter(order => order.id !== orderId);
+            localStorage.setItem(globalOrderKey, JSON.stringify(currentOrders));
+            updateOrdersList();
         }
 
         // 주문 번호 초기화
@@ -770,8 +642,8 @@
             menuList.innerHTML = html;
         }
 
-        // 메뉴 추가 (실시간 동기화)
-        async function addMenu() {
+        // 메뉴 추가
+        function addMenu() {
             const name = document.getElementById('menuName').value.trim();
             const price = parseInt(document.getElementById('menuPrice').value) || 0;
             const imageFile = document.getElementById('menuImage').files[0];
@@ -782,6 +654,7 @@
             }
             
             const newMenu = {
+                id: 'menu' + Date.now(),
                 name: name,
                 price: price,
                 image: null
@@ -789,40 +662,39 @@
             
             if (imageFile) {
                 const reader = new FileReader();
-                reader.onload = async function(e) {
+                reader.onload = function(e) {
                     newMenu.image = e.target.result;
-                    await finishAddingMenu(newMenu);
+                    finishAddingMenu(newMenu);
                 };
                 reader.readAsDataURL(imageFile);
             } else {
-                await finishAddingMenu(newMenu);
+                finishAddingMenu(newMenu);
             }
         }
 
-        async function finishAddingMenu(newMenu) {
-            try {
-                await window.firestoreEmulation.addDoc('menus', newMenu);
-                
-                // 폼 초기화
-                document.getElementById('menuName').value = '';
-                document.getElementById('menuPrice').value = '';
-                document.getElementById('menuImage').value = '';
-                
-                alert('메뉴가 등록되었습니다.');
-            } catch (error) {
-                console.error('메뉴 등록 실패:', error);
-                alert('메뉴 등록 중 오류가 발생했습니다.');
-            }
+        function finishAddingMenu(newMenu) {
+            menuItems.push(newMenu);
+            localStorage.setItem(globalMenuKey, JSON.stringify(menuItems));
+            
+            // 폼 초기화
+            document.getElementById('menuName').value = '';
+            document.getElementById('menuPrice').value = '';
+            document.getElementById('menuImage').value = '';
+            
+            // 화면 업데이트
+            renderMenuManagement();
+            renderMenuGrid();
+            
+            alert('메뉴가 등록되었습니다.');
         }
 
-        // 메뉴 삭제 (실시간 동기화)
-        async function deleteMenu(menuId) {
+        // 메뉴 삭제
+        function deleteMenu(menuId) {
             if (confirm('정말로 이 메뉴를 삭제하시겠습니까?')) {
-                try {
-                    await window.firestoreEmulation.deleteDoc('menus', menuId);
-                } catch (error) {
-                    console.error('메뉴 삭제 실패:', error);
-                }
+                menuItems = menuItems.filter(menu => menu.id !== menuId);
+                localStorage.setItem(globalMenuKey, JSON.stringify(menuItems));
+                renderMenuManagement();
+                renderMenuGrid();
             }
         }
 
@@ -847,6 +719,7 @@
             });
             
             const dailyStatsDiv = document.getElementById('dailyStats');
+            if (!dailyStatsDiv) return;
             
             if (Object.keys(todayStats).length === 0) {
                 dailyStatsDiv.innerHTML = '<p class="text-gray-500 text-center py-8">오늘 주문이 없습니다</p>';
@@ -868,24 +741,25 @@
             dailyStatsDiv.innerHTML = html;
         }
 
+        // 일일 결산 새로고침
+        function refreshDaily() {
+            updateDailyStats();
+        }
+
         // 당일 정산 완료
-        async function completeDailySettlement() {
+        function completeDailySettlement() {
             if (confirm('당일 정산을 완료하시겠습니까? 현재 주문 목록과 주문번호가 초기화됩니다.')) {
-                try {
-                    // 모든 주문 삭제
-                    for (const order of currentOrders) {
-                        await window.firestoreEmulation.deleteDoc('orders', order.id);
-                    }
-                    
-                    // 주문 카운터 초기화
-                    orderCounter = 0;
-                    localStorage.setItem('orderCounter', '0');
-                    
-                    alert('당일 정산이 완료되었습니다. 새로운 영업을 시작합니다.');
-                } catch (error) {
-                    console.error('정산 처리 실패:', error);
-                    alert('정산 처리 중 오류가 발생했습니다.');
-                }
+                // 모든 주문 삭제
+                currentOrders = [];
+                localStorage.setItem(globalOrderKey, JSON.stringify(currentOrders));
+                
+                // 주문 카운터 초기화
+                orderCounter = 0;
+                localStorage.setItem('orderCounter', '0');
+                
+                alert('당일 정산이 완료되었습니다. 새로운 영업을 시작합니다.');
+                updateOrdersList();
+                updateDailyStats();
             }
         }
 
