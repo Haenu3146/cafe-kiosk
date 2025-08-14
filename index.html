@@ -6,11 +6,6 @@
     <title>계산공업고등학교 식품생명과학과 카페 키오스크</title>
     <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
-    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-    
-    <!-- Firebase -->
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-app-compat.js"></script>
-    <script src="https://www.gstatic.com/firebasejs/9.0.0/firebase-database-compat.js"></script>
     
     <style>
         body {
@@ -111,19 +106,49 @@
             z-index: 1000;
         }
         
-        .sync-indicator.connecting {
-            background: #f59e0b;
-        }
-        
         .sync-indicator.offline {
             background: #ef4444;
+        }
+        
+        .menu-admin-item {
+            background: white;
+            border-radius: 10px;
+            padding: 15px;
+            box-shadow: 0 2px 10px rgba(0,0,0,0.1);
+        }
+        
+        .menu-admin-item img {
+            width: 100%;
+            height: 100px;
+            object-fit: cover;
+            border-radius: 8px;
+        }
+        
+        .loading {
+            opacity: 0.6;
+            pointer-events: none;
+        }
+        
+        .success-message {
+            background: #10b981;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 8px;
+            margin-top: 10px;
+            animation: fadeInOut 3s ease;
+        }
+        
+        @keyframes fadeInOut {
+            0% { opacity: 0; transform: translateY(-10px); }
+            20%, 80% { opacity: 1; transform: translateY(0); }
+            100% { opacity: 0; transform: translateY(-10px); }
         }
     </style>
 </head>
 <body>
     <!-- 동기화 상태 표시 -->
     <div id="syncIndicator" class="sync-indicator">
-        <i class="fas fa-wifi"></i> 연결 중...
+        <i class="fas fa-wifi"></i> 실시간 연동
     </div>
 
     <!-- 주문 모드 -->
@@ -132,7 +157,7 @@
         <div class="text-center mb-8">
             <h1 class="text-4xl font-bold text-white mb-2">계산공업고등학교</h1>
             <h2 class="text-2xl text-white opacity-90">식품생명과학과 카페</h2>
-            <p class="text-white opacity-75 text-sm mt-2">클라우드 실시간 다기기 연동 키오스크</p>
+            <p class="text-white opacity-75 text-sm mt-2">실시간 다기기 연동 키오스크</p>
             <button onclick="showAdminLogin()" class="mt-4 text-white opacity-70 hover:opacity-100 transition-opacity">
                 <i class="fas fa-cog"></i> 관리자 모드
             </button>
@@ -142,9 +167,7 @@
             <!-- 메뉴 영역 -->
             <div class="flex-1">
                 <div id="menuGrid" class="grid grid-cols-3 gap-4">
-                    <div class="col-span-3 text-center py-8">
-                        <p class="text-white opacity-75">메뉴를 불러오는 중...</p>
-                    </div>
+                    <!-- 메뉴 카드들이 동적으로 생성됩니다 -->
                 </div>
             </div>
 
@@ -193,7 +216,7 @@
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-bold">관리자 모드</h1>
-                    <p class="text-sm opacity-90">클라우드 실시간 다기기 연동 활성화</p>
+                    <p class="text-sm opacity-90">실시간 다기기 연동 활성화</p>
                 </div>
                 <button onclick="exitAdminMode()" class="bg-white bg-opacity-20 px-4 py-2 rounded-lg hover:bg-opacity-30 transition-colors">
                     <i class="fas fa-sign-out-alt"></i> 나가기
@@ -203,7 +226,7 @@
             <!-- 탭 메뉴 -->
             <div class="flex gap-2 mt-4">
                 <button onclick="showAdminTab('orders')" class="tab-button px-4 py-2 rounded-lg" id="tab-orders">주문 확인</button>
-                <button onclick="showAdminTab('menu')" class="tab-button px-4 py-2 rounded-lg" id="tab-menu">메뉴 등록</button>
+                <button onclick="showAdminTab('menu')" class="tab-button px-4 py-2 rounded-lg" id="tab-menu">메뉴 관리</button>
                 <button onclick="showAdminTab('daily')" class="tab-button px-4 py-2 rounded-lg" id="tab-daily">일일 결산</button>
                 <button onclick="showAdminTab('monthly')" class="tab-button px-4 py-2 rounded-lg" id="tab-monthly">월 결산</button>
             </div>
@@ -214,7 +237,7 @@
             <!-- 주문 확인 탭 -->
             <div id="adminOrders" class="admin-tab">
                 <div class="flex justify-between items-center mb-4">
-                    <h2 class="text-2xl font-bold">클라우드 실시간 주문 확인</h2>
+                    <h2 class="text-2xl font-bold">실시간 주문 확인</h2>
                     <div class="flex gap-2">
                         <button onclick="refreshOrders()" class="btn-primary">
                             <i class="fas fa-sync-alt"></i> 주문 새로고침
@@ -225,32 +248,50 @@
                     </div>
                 </div>
                 <div id="ordersList" class="space-y-3">
-                    <p class="text-gray-500 text-center py-8">주문을 불러오는 중...</p>
+                    <p class="text-gray-500 text-center py-8">주문이 없습니다</p>
                 </div>
             </div>
 
-            <!-- 메뉴 등록 탭 -->
+            <!-- 메뉴 관리 탭 -->
             <div id="adminMenu" class="admin-tab hidden">
-                <h2 class="text-2xl font-bold mb-4">메뉴 관리 (클라우드 동기화)</h2>
+                <h2 class="text-2xl font-bold mb-4">메뉴 관리</h2>
                 
                 <!-- 메뉴 등록 폼 -->
                 <div class="bg-white p-6 rounded-2xl shadow-lg mb-6">
                     <h3 class="text-lg font-bold mb-4">새 메뉴 등록</h3>
-                    <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
-                        <input type="text" id="menuName" placeholder="메뉴 이름" class="p-3 border border-gray-300 rounded-lg">
-                        <input type="number" id="menuPrice" placeholder="가격 (0원은 무료)" class="p-3 border border-gray-300 rounded-lg">
-                        <input type="file" id="menuImage" accept="image/*" class="p-3 border border-gray-300 rounded-lg">
-                    </div>
-                    <button onclick="addMenu()" class="mt-4 btn-primary">
-                        <i class="fas fa-plus"></i> 메뉴 등록
-                    </button>
+                    <form id="menuForm" onsubmit="addMenu(event)">
+                        <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-4">
+                            <div>
+                                <label class="block text-sm font-medium mb-2">메뉴 이름 *</label>
+                                <input type="text" id="menuName" placeholder="메뉴 이름" class="w-full p-3 border border-gray-300 rounded-lg" required>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-2">가격 (원)</label>
+                                <input type="number" id="menuPrice" placeholder="0" min="0" class="w-full p-3 border border-gray-300 rounded-lg">
+                                <p class="text-xs text-gray-500 mt-1">0원은 무료 메뉴입니다</p>
+                            </div>
+                            <div>
+                                <label class="block text-sm font-medium mb-2">메뉴 이미지</label>
+                                <input type="file" id="menuImage" accept="image/*" class="w-full p-3 border border-gray-300 rounded-lg">
+                            </div>
+                        </div>
+                        <button type="submit" class="btn-primary">
+                            <i class="fas fa-plus"></i> 메뉴 등록
+                        </button>
+                    </form>
+                    <div id="menuFormMessage"></div>
                 </div>
 
                 <!-- 등록된 메뉴 목록 -->
                 <div class="bg-white p-6 rounded-2xl shadow-lg">
-                    <h3 class="text-lg font-bold mb-4">등록된 메뉴 (클라우드 실시간 동기화)</h3>
+                    <div class="flex justify-between items-center mb-4">
+                        <h3 class="text-lg font-bold">등록된 메뉴 (실시간 동기화)</h3>
+                        <button onclick="loadMenus()" class="btn-primary">
+                            <i class="fas fa-sync-alt"></i> 새로고침
+                        </button>
+                    </div>
                     <div id="menuList" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-                        <p class="text-gray-500 text-center py-8 col-span-full">메뉴를 불러오는 중...</p>
+                        <!-- 메뉴 목록이 여기에 표시됩니다 -->
                     </div>
                 </div>
             </div>
@@ -269,11 +310,7 @@
                     </div>
                 </div>
                 <div id="dailyStats" class="bg-white p-6 rounded-2xl shadow-lg">
-                    <p class="text-gray-500 text-center py-8">데이터를 불러오는 중...</p>
-                </div>
-                <div class="bg-white p-6 rounded-2xl shadow-lg mt-6" style="height: 400px;">
-                    <h3 class="text-lg font-bold mb-4">일일 판매 차트</h3>
-                    <canvas id="dailyChart"></canvas>
+                    <!-- 일일 통계가 여기에 표시됩니다 -->
                 </div>
             </div>
 
@@ -286,11 +323,7 @@
                     </button>
                 </div>
                 <div id="monthlyStats" class="bg-white p-6 rounded-2xl shadow-lg">
-                    <p class="text-gray-500 text-center py-8">데이터를 불러오는 중...</p>
-                </div>
-                <div class="bg-white p-6 rounded-2xl shadow-lg mt-6" style="height: 400px;">
-                    <h3 class="text-lg font-bold mb-4">월별 판매 차트</h3>
-                    <canvas id="monthlyChart"></canvas>
+                    <!-- 월별 통계가 여기에 표시됩니다 -->
                 </div>
             </div>
         </div>
@@ -304,247 +337,182 @@
             </div>
             <h3 class="text-2xl font-bold mb-2">주문이 완료되었습니다!</h3>
             <p class="text-lg mb-2">주문번호: <span id="orderNumber" class="font-bold text-blue-600"></span></p>
-            <p class="text-sm text-gray-600 mb-4">모든 연결된 기기에서 실시간 확인 가능합니다</p>
+            <p class="text-sm text-gray-600 mb-4">관리자 화면에서 실시간으로 확인 가능합니다</p>
             <button onclick="hideOrderCompleted()" class="btn-primary">확인</button>
         </div>
     </div>
 
     <script>
-        // Firebase 설정
-        const firebaseConfig = {
-            apiKey: "AIzaSyBqJ8t5kkQvW4AqYz0wJxJ8aKJFSBJJBSo",
-            authDomain: "cafe-kiosk-demo-default-rtdb.firebaseio.com",
-            databaseURL: "https://cafe-kiosk-demo-default-rtdb.firebaseio.com",
-            projectId: "cafe-kiosk-demo",
-            storageBucket: "cafe-kiosk-demo.appspot.com",
-            messagingSenderId: "123456789",
-            appId: "1:123456789:web:abcdef123456"
-        };
-
-        // Firebase 초기화
-        let database;
-        let isFirebaseConnected = false;
-
-        try {
-            firebase.initializeApp(firebaseConfig);
-            database = firebase.database();
-            isFirebaseConnected = true;
-            updateSyncIndicator('connected');
-        } catch (error) {
-            console.error('Firebase 연결 실패:', error);
-            isFirebaseConnected = false;
-            updateSyncIndicator('offline');
-            // Firebase 연결 실패 시 localStorage 사용
-            database = createLocalDatabase();
-        }
-
-        // 로컬 데이터베이스 대안 (Firebase 연결 실패 시)
-        function createLocalDatabase() {
-            return {
-                ref: function(path) {
-                    return {
-                        set: function(data) {
-                            localStorage.setItem('firebase_' + path, JSON.stringify(data));
-                            return Promise.resolve();
-                        },
-                        push: function(data) {
-                            const key = Date.now().toString();
-                            const currentData = JSON.parse(localStorage.getItem('firebase_' + path) || '{}');
-                            currentData[key] = data;
-                            localStorage.setItem('firebase_' + path, JSON.stringify(currentData));
-                            return Promise.resolve({ key: key });
-                        },
-                        on: function(event, callback) {
-                            const data = JSON.parse(localStorage.getItem('firebase_' + path) || '{}');
-                            callback({ val: () => data });
-                        },
-                        once: function(event) {
-                            const data = JSON.parse(localStorage.getItem('firebase_' + path) || '{}');
-                            return Promise.resolve({ val: () => data });
-                        },
-                        remove: function() {
-                            localStorage.removeItem('firebase_' + path);
-                            return Promise.resolve();
-                        }
-                    };
-                }
-            };
-        }
-
         // 전역 변수
         let currentCart = [];
+        let orderCounter = parseInt(localStorage.getItem('orderCounter') || '0');
         let menuItems = [];
         let currentOrders = [];
-        let dailyStats = {};
-        let monthlyStats = {};
-        let orderCounter = 0;
-        let dailyChart = null;
-        let monthlyChart = null;
+        let dailyStats = JSON.parse(localStorage.getItem('dailyStats') || '{}');
+        let monthlyStats = JSON.parse(localStorage.getItem('monthlyStats') || '{}');
 
-        // 초기 메뉴 데이터
+        // 실시간 동기화를 위한 키
+        const STORAGE_KEYS = {
+            ORDERS: 'cafeOrders',
+            MENUS: 'cafeMenus',
+            ORDER_COUNTER: 'orderCounter',
+            DAILY_STATS: 'dailyStats',
+            MONTHLY_STATS: 'monthlyStats'
+        };
+
+        // 기본 메뉴 데이터
         const defaultMenus = [
-            { id: 'menu1', name: '아메리카노(아이스)', price: 2000, image: null },
-            { id: 'menu2', name: '카페라떼', price: 3000, image: null },
-            { id: 'menu3', name: '카푸치노', price: 3500, image: null },
-            { id: 'menu4', name: '바닐라라떼', price: 4000, image: null },
-            { id: 'menu5', name: '오렌지주스', price: 2500, image: null },
-            { id: 'menu6', name: '사과주스', price: 2500, image: null }
+            { 
+                id: 'menu1', 
+                name: '아메리카노(아이스)', 
+                price: 2000, 
+                image: null,
+                timestamp: Date.now() 
+            },
+            { 
+                id: 'menu2', 
+                name: '카페라떼', 
+                price: 3000, 
+                image: null,
+                timestamp: Date.now() 
+            },
+            { 
+                id: 'menu3', 
+                name: '카푸치노', 
+                price: 3500, 
+                image: null,
+                timestamp: Date.now() 
+            },
+            { 
+                id: 'menu4', 
+                name: '바닐라라떼', 
+                price: 4000, 
+                image: null,
+                timestamp: Date.now() 
+            },
+            { 
+                id: 'menu5', 
+                name: '오렌지주스', 
+                price: 2500, 
+                image: null,
+                timestamp: Date.now() 
+            },
+            { 
+                id: 'menu6', 
+                name: '사과주스', 
+                price: 2500, 
+                image: null,
+                timestamp: Date.now() 
+            }
         ];
 
         // 초기화
         function initializeData() {
             loadMenus();
             loadOrders();
-            loadOrderCounter();
-            loadStats();
-            updateCartDisplay();
-            setupRealtimeListeners();
+            updateSyncIndicator();
+            
+            // Storage 이벤트 리스너 (다른 탭/창의 변경사항 감지)
+            window.addEventListener('storage', handleStorageChange);
+            
+            // 주기적 동기화 체크
+            setInterval(checkForUpdates, 1000);
         }
 
-        // 실시간 리스너 설정
-        function setupRealtimeListeners() {
-            if (!isFirebaseConnected) return;
-
-            // 메뉴 실시간 동기화
-            database.ref('menus').on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    menuItems = Object.keys(data).map(key => ({
-                        id: key,
-                        ...data[key]
-                    }));
-                    renderMenuGrid();
-                    renderMenuManagement();
-                }
-            });
-
-            // 주문 실시간 동기화
-            database.ref('orders').on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data) {
-                    currentOrders = Object.keys(data).map(key => ({
-                        id: key,
-                        ...data[key]
-                    })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                    updateOrdersList();
+        // 스토리지 변경 감지
+        function handleStorageChange(e) {
+            switch(e.key) {
+                case STORAGE_KEYS.ORDERS:
+                    loadOrders();
+                    break;
+                case STORAGE_KEYS.MENUS:
+                    loadMenus();
+                    break;
+                case STORAGE_KEYS.ORDER_COUNTER:
+                    orderCounter = parseInt(e.newValue || '0');
+                    break;
+                case STORAGE_KEYS.DAILY_STATS:
+                    dailyStats = JSON.parse(e.newValue || '{}');
                     updateDailyStats();
-                }
-            });
+                    break;
+                case STORAGE_KEYS.MONTHLY_STATS:
+                    monthlyStats = JSON.parse(e.newValue || '{}');
+                    renderMonthlyStats();
+                    break;
+            }
+        }
 
-            // 주문 카운터 실시간 동기화
-            database.ref('orderCounter').on('value', (snapshot) => {
-                const data = snapshot.val();
-                if (data !== null) {
-                    orderCounter = data;
-                }
-            });
+        // 업데이트 체크
+        function checkForUpdates() {
+            // 주문 업데이트 체크
+            const latestOrders = JSON.parse(localStorage.getItem(STORAGE_KEYS.ORDERS) || '[]');
+            if (JSON.stringify(latestOrders) !== JSON.stringify(currentOrders)) {
+                currentOrders = latestOrders;
+                updateOrdersList();
+            }
 
-            // 연결 상태 모니터링
-            database.ref('.info/connected').on('value', (snapshot) => {
-                if (snapshot.val() === true) {
-                    updateSyncIndicator('connected');
-                } else {
-                    updateSyncIndicator('offline');
-                }
-            });
+            // 메뉴 업데이트 체크
+            const latestMenus = JSON.parse(localStorage.getItem(STORAGE_KEYS.MENUS) || '[]');
+            if (JSON.stringify(latestMenus) !== JSON.stringify(menuItems)) {
+                menuItems = latestMenus;
+                renderMenuGrid();
+                renderMenuManagement();
+            }
+
+            // 주문 카운터 체크
+            const latestCounter = parseInt(localStorage.getItem(STORAGE_KEYS.ORDER_COUNTER) || '0');
+            if (latestCounter !== orderCounter) {
+                orderCounter = latestCounter;
+            }
+        }
+
+        // 동기화 상태 표시
+        function updateSyncIndicator() {
+            const indicator = document.getElementById('syncIndicator');
+            indicator.innerHTML = '<i class="fas fa-wifi"></i> 실시간 연동';
+            indicator.className = 'sync-indicator';
         }
 
         // 메뉴 로드
-        async function loadMenus() {
-            try {
-                const snapshot = await database.ref('menus').once('value');
-                const data = snapshot.val();
-                
-                if (!data) {
-                    // 기본 메뉴 설정
-                    const menusToSave = {};
-                    defaultMenus.forEach(menu => {
-                        menusToSave[menu.id] = menu;
-                    });
-                    await database.ref('menus').set(menusToSave);
-                    menuItems = [...defaultMenus];
-                } else {
-                    menuItems = Object.keys(data).map(key => ({
-                        id: key,
-                        ...data[key]
-                    }));
-                }
-                
-                renderMenuGrid();
-            } catch (error) {
-                console.error('메뉴 로드 오류:', error);
+        function loadMenus() {
+            let storedMenus = JSON.parse(localStorage.getItem(STORAGE_KEYS.MENUS) || '[]');
+            
+            if (storedMenus.length === 0) {
                 menuItems = [...defaultMenus];
-                renderMenuGrid();
+                saveMenus();
+            } else {
+                menuItems = storedMenus;
             }
+            
+            renderMenuGrid();
+            renderMenuManagement();
+        }
+
+        // 메뉴 저장
+        function saveMenus() {
+            localStorage.setItem(STORAGE_KEYS.MENUS, JSON.stringify(menuItems));
+            // 다른 탭에 변경사항 알림
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: STORAGE_KEYS.MENUS,
+                newValue: JSON.stringify(menuItems)
+            }));
         }
 
         // 주문 로드
-        async function loadOrders() {
-            try {
-                const snapshot = await database.ref('orders').once('value');
-                const data = snapshot.val();
-                
-                if (data) {
-                    currentOrders = Object.keys(data).map(key => ({
-                        id: key,
-                        ...data[key]
-                    })).sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
-                } else {
-                    currentOrders = [];
-                }
-                
-                updateOrdersList();
-            } catch (error) {
-                console.error('주문 로드 오류:', error);
-                currentOrders = [];
-            }
+        function loadOrders() {
+            currentOrders = JSON.parse(localStorage.getItem(STORAGE_KEYS.ORDERS) || '[]');
+            updateOrdersList();
+            updateDailyStats();
         }
 
-        // 주문 카운터 로드
-        async function loadOrderCounter() {
-            try {
-                const snapshot = await database.ref('orderCounter').once('value');
-                const data = snapshot.val();
-                orderCounter = data || 0;
-            } catch (error) {
-                console.error('주문 카운터 로드 오류:', error);
-                orderCounter = 0;
-            }
-        }
-
-        // 통계 로드
-        async function loadStats() {
-            try {
-                const dailySnapshot = await database.ref('dailyStats').once('value');
-                const monthlySnapshot = await database.ref('monthlyStats').once('value');
-                
-                dailyStats = dailySnapshot.val() || {};
-                monthlyStats = monthlySnapshot.val() || {};
-            } catch (error) {
-                console.error('통계 로드 오류:', error);
-                dailyStats = {};
-                monthlyStats = {};
-            }
-        }
-
-        // 동기화 상태 업데이트
-        function updateSyncIndicator(status) {
-            const indicator = document.getElementById('syncIndicator');
-            
-            switch(status) {
-                case 'connected':
-                    indicator.innerHTML = '<i class="fas fa-wifi"></i> 클라우드 연결됨';
-                    indicator.className = 'sync-indicator';
-                    break;
-                case 'connecting':
-                    indicator.innerHTML = '<i class="fas fa-spinner fa-spin"></i> 연결 중...';
-                    indicator.className = 'sync-indicator connecting';
-                    break;
-                case 'offline':
-                    indicator.innerHTML = '<i class="fas fa-wifi-slash"></i> 오프라인 모드';
-                    indicator.className = 'sync-indicator offline';
-                    break;
-            }
+        // 주문 저장
+        function saveOrders() {
+            localStorage.setItem(STORAGE_KEYS.ORDERS, JSON.stringify(currentOrders));
+            // 다른 탭에 변경사항 알림
+            window.dispatchEvent(new StorageEvent('storage', {
+                key: STORAGE_KEYS.ORDERS,
+                newValue: JSON.stringify(currentOrders)
+            }));
         }
 
         // 메뉴 그리드 렌더링
@@ -553,7 +521,7 @@
             menuGrid.innerHTML = '';
             
             if (menuItems.length === 0) {
-                menuGrid.innerHTML = '<div class="col-span-3 text-center py-8"><p class="text-white opacity-75">메뉴가 없습니다</p></div>';
+                menuGrid.innerHTML = '<div class="col-span-3 text-center py-8"><p class="text-white opacity-75">등록된 메뉴가 없습니다</p></div>';
                 return;
             }
             
@@ -563,28 +531,34 @@
                 
                 menuCard.innerHTML = `
                     <div class="menu-image mx-auto mb-3">
-                        ${menu.image ? `<img src="${menu.image}" alt="${menu.name}" class="w-full h-full object-cover rounded-lg">` : '<i class="fas fa-coffee"></i>'}
+                        ${menu.image ? 
+                            `<img src="${menu.image}" alt="${menu.name}" class="w-full h-full object-cover rounded-lg">` : 
+                            `<div class="w-full h-full flex items-center justify-center bg-gray-200 rounded-lg"><i class="fas fa-coffee text-gray-400 text-3xl"></i></div>`
+                        }
                     </div>
                     <h3 class="font-bold text-lg mb-2">${menu.name}</h3>
                     <p class="text-blue-600 font-bold">${menu.price === 0 ? '무료' : menu.price.toLocaleString() + '원'}</p>
                 `;
                 
-                menuCard.addEventListener('click', () => addToCart(menu));
+                menuCard.addEventListener('click', function() {
+                    addToCart(menu.id, menu.name, menu.price);
+                });
+                
                 menuGrid.appendChild(menuCard);
             });
         }
 
         // 장바구니에 추가
-        function addToCart(menu) {
-            const existingItem = currentCart.find(item => item.id === menu.id);
+        function addToCart(menuId, menuName, menuPrice) {
+            const existingItem = currentCart.find(item => item.id === menuId);
             
             if (existingItem) {
                 existingItem.quantity += 1;
             } else {
                 currentCart.push({
-                    id: menu.id,
-                    name: menu.name,
-                    price: menu.price,
+                    id: menuId,
+                    name: menuName,
+                    price: menuPrice,
                     quantity: 1
                 });
             }
@@ -659,85 +633,242 @@
         }
 
         // 주문하기
-        async function placeOrder() {
+        function placeOrder() {
             if (currentCart.length === 0) return;
             
-            try {
-                orderCounter += 1;
-                const orderNumber = orderCounter.toString().padStart(3, '0');
-                
-                const order = {
-                    orderNumber: orderCounter,
-                    number: orderNumber,
-                    items: [...currentCart],
-                    timestamp: new Date().toISOString(),
-                    total: currentCart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-                    status: 'pending'
-                };
-                
-                // Firebase에 주문 저장
-                await database.ref('orders').push(order);
-                await database.ref('orderCounter').set(orderCounter);
-                
-                // 통계 업데이트
-                await updateStats(order);
-                
-                // 주문 완료 표시
-                document.getElementById('orderNumber').textContent = '#' + orderNumber;
-                document.getElementById('orderCompleted').classList.remove('hidden');
-                document.getElementById('orderCompleted').classList.add('flex');
-                
-                // 장바구니 비우기
-                clearCart();
-                
-            } catch (error) {
-                console.error('주문 처리 오류:', error);
-                alert('주문 처리 중 오류가 발생했습니다. 다시 시도해주세요.');
-            }
+            orderCounter += 1;
+            const orderNumber = orderCounter.toString().padStart(3, '0');
+            
+            const order = {
+                id: Date.now().toString(),
+                orderNumber: orderCounter,
+                number: orderNumber,
+                items: [...currentCart],
+                timestamp: new Date().toISOString(),
+                total: currentCart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
+                status: 'pending'
+            };
+            
+            currentOrders.push(order);
+            saveOrders();
+            
+            // 주문 카운터 저장
+            localStorage.setItem(STORAGE_KEYS.ORDER_COUNTER, orderCounter.toString());
+            
+            // 통계 업데이트
+            updateStats(order);
+            
+            // 주문 완료 표시
+            document.getElementById('orderNumber').textContent = '#' + orderNumber;
+            document.getElementById('orderCompleted').classList.remove('hidden');
+            document.getElementById('orderCompleted').classList.add('flex');
+            
+            // 장바구니 비우기
+            clearCart();
         }
 
         // 통계 업데이트
-        async function updateStats(order) {
+        function updateStats(order) {
+            const today = new Date().toDateString();
+            const month = new Date().toISOString().substring(0, 7);
+            
+            // 일일 통계
+            if (!dailyStats[today]) {
+                dailyStats[today] = {};
+            }
+            
+            order.items.forEach(item => {
+                if (!dailyStats[today][item.name]) {
+                    dailyStats[today][item.name] = 0;
+                }
+                dailyStats[today][item.name] += item.quantity;
+            });
+            
+            // 월 통계
+            if (!monthlyStats[month]) {
+                monthlyStats[month] = {};
+            }
+            
+            order.items.forEach(item => {
+                if (!monthlyStats[month][item.name]) {
+                    monthlyStats[month][item.name] = 0;
+                }
+                monthlyStats[month][item.name] += item.quantity;
+            });
+            
+            localStorage.setItem(STORAGE_KEYS.DAILY_STATS, JSON.stringify(dailyStats));
+            localStorage.setItem(STORAGE_KEYS.MONTHLY_STATS, JSON.stringify(monthlyStats));
+        }
+
+        // 메뉴 추가
+        function addMenu(event) {
+            if (event) event.preventDefault();
+            
+            const form = document.getElementById('menuForm');
+            const messageDiv = document.getElementById('menuFormMessage');
+            const name = document.getElementById('menuName').value.trim();
+            const price = parseInt(document.getElementById('menuPrice').value) || 0;
+            const imageFile = document.getElementById('menuImage').files[0];
+            
+            if (!name) {
+                showMessage(messageDiv, '메뉴 이름을 입력해주세요.', 'error');
+                return;
+            }
+            
+            // 중복 메뉴 검사
+            const existingMenu = menuItems.find(menu => menu.name === name);
+            if (existingMenu) {
+                showMessage(messageDiv, '이미 존재하는 메뉴입니다.', 'error');
+                return;
+            }
+            
+            const newMenu = {
+                id: 'menu' + Date.now(),
+                name: name,
+                price: price,
+                image: null,
+                timestamp: Date.now()
+            };
+            
+            // 로딩 상태 표시
+            form.classList.add('loading');
+            
+            if (imageFile) {
+                const reader = new FileReader();
+                reader.onload = function(e) {
+                    newMenu.image = e.target.result;
+                    finishAddingMenu(newMenu, form, messageDiv);
+                };
+                reader.onerror = function() {
+                    showMessage(messageDiv, '이미지 업로드에 실패했습니다.', 'error');
+                    form.classList.remove('loading');
+                };
+                reader.readAsDataURL(imageFile);
+            } else {
+                finishAddingMenu(newMenu, form, messageDiv);
+            }
+        }
+
+        function finishAddingMenu(newMenu, form, messageDiv) {
             try {
-                const today = new Date().toDateString();
-                const month = new Date().toISOString().substring(0, 7);
+                menuItems.push(newMenu);
+                saveMenus();
                 
-                // 일일 통계 업데이트
-                if (!dailyStats[today]) {
-                    dailyStats[today] = {};
-                }
+                // 폼 초기화
+                form.reset();
+                form.classList.remove('loading');
                 
-                order.items.forEach(item => {
-                    if (!dailyStats[today][item.name]) {
-                        dailyStats[today][item.name] = 0;
-                    }
-                    dailyStats[today][item.name] += item.quantity;
-                });
+                // 화면 업데이트
+                renderMenuManagement();
+                renderMenuGrid();
                 
-                // 월 통계 업데이트
-                if (!monthlyStats[month]) {
-                    monthlyStats[month] = {};
-                }
-                
-                order.items.forEach(item => {
-                    if (!monthlyStats[month][item.name]) {
-                        monthlyStats[month][item.name] = 0;
-                    }
-                    monthlyStats[month][item.name] += item.quantity;
-                });
-                
-                // Firebase에 저장
-                await database.ref('dailyStats').set(dailyStats);
-                await database.ref('monthlyStats').set(monthlyStats);
+                showMessage(messageDiv, '메뉴가 성공적으로 등록되었습니다!', 'success');
                 
             } catch (error) {
-                console.error('통계 업데이트 오류:', error);
+                console.error('메뉴 등록 오류:', error);
+                showMessage(messageDiv, '메뉴 등록에 실패했습니다. 다시 시도해주세요.', 'error');
+                form.classList.remove('loading');
+            }
+        }
+
+        // 메시지 표시
+        function showMessage(container, message, type) {
+            const messageElement = document.createElement('div');
+            messageElement.className = type === 'success' ? 'success-message' : 'error-message';
+            messageElement.style.background = type === 'success' ? '#10b981' : '#ef4444';
+            messageElement.style.color = 'white';
+            messageElement.style.padding = '10px 20px';
+            messageElement.style.borderRadius = '8px';
+            messageElement.style.marginTop = '10px';
+            messageElement.textContent = message;
+            
+            container.innerHTML = '';
+            container.appendChild(messageElement);
+            
+            setTimeout(() => {
+                messageElement.remove();
+            }, 3000);
+        }
+
+        // 메뉴 관리 렌더링
+        function renderMenuManagement() {
+            const menuList = document.getElementById('menuList');
+            if (!menuList) return;
+            
+            if (menuItems.length === 0) {
+                menuList.innerHTML = '<p class="text-gray-500 text-center py-8 col-span-full">등록된 메뉴가 없습니다</p>';
+                return;
+            }
+            
+            let html = '';
+            menuItems.forEach(menu => {
+                html += `
+                    <div class="menu-admin-item">
+                        <div class="h-24 bg-gray-200 rounded-lg mb-3 overflow-hidden flex items-center justify-center">
+                            ${menu.image ? 
+                                `<img src="${menu.image}" alt="${menu.name}" class="w-full h-full object-cover">` : 
+                                `<i class="fas fa-coffee text-gray-400 text-2xl"></i>`
+                            }
+                        </div>
+                        <h4 class="font-bold mb-1">${menu.name}</h4>
+                        <p class="text-sm text-gray-600 mb-3">${menu.price === 0 ? '무료' : menu.price.toLocaleString() + '원'}</p>
+                        <div class="flex gap-2">
+                            <button onclick="editMenu('${menu.id}')" class="flex-1 bg-blue-500 text-white py-2 px-3 rounded-lg hover:bg-blue-600 transition-colors text-sm">
+                                <i class="fas fa-edit"></i> 수정
+                            </button>
+                            <button onclick="deleteMenu('${menu.id}')" class="flex-1 bg-red-500 text-white py-2 px-3 rounded-lg hover:bg-red-600 transition-colors text-sm">
+                                <i class="fas fa-trash"></i> 삭제
+                            </button>
+                        </div>
+                    </div>
+                `;
+            });
+            
+            menuList.innerHTML = html;
+        }
+
+        // 메뉴 수정
+        function editMenu(menuId) {
+            const menu = menuItems.find(m => m.id === menuId);
+            if (!menu) return;
+            
+            const newName = prompt('메뉴 이름을 입력하세요:', menu.name);
+            if (newName === null) return;
+            
+            if (newName.trim() === '') {
+                alert('메뉴 이름은 필수입니다.');
+                return;
+            }
+            
+            const newPrice = prompt('가격을 입력하세요:', menu.price);
+            if (newPrice === null) return;
+            
+            const price = parseInt(newPrice) || 0;
+            
+            menu.name = newName.trim();
+            menu.price = price;
+            
+            saveMenus();
+            renderMenuManagement();
+            renderMenuGrid();
+            
+            alert('메뉴가 수정되었습니다.');
+        }
+
+        // 메뉴 삭제
+        function deleteMenu(menuId) {
+            if (confirm('정말로 이 메뉴를 삭제하시겠습니까?')) {
+                menuItems = menuItems.filter(menu => menu.id !== menuId);
+                saveMenus();
+                renderMenuManagement();
+                renderMenuGrid();
             }
         }
 
         // 주문 목록 업데이트
         function updateOrdersList() {
             const ordersList = document.getElementById('ordersList');
+            if (!ordersList) return;
             
             if (currentOrders.length === 0) {
                 ordersList.innerHTML = '<p class="text-gray-500 text-center py-8">주문이 없습니다</p>';
@@ -746,7 +877,7 @@
             
             let html = '';
             currentOrders.forEach(order => {
-                const isNew = (Date.now() - new Date(order.timestamp).getTime()) < 30000;
+                const isNew = (Date.now() - new Date(order.timestamp).getTime()) < 30000; // 30초 이내 주문
                 html += `
                     <div class="order-item ${isNew ? 'new-order' : ''}">
                         <div class="flex justify-between items-start mb-3">
@@ -783,165 +914,65 @@
         // 주문 새로고침
         function refreshOrders() {
             loadOrders();
+            updateSyncIndicator();
         }
 
         // 주문 완료 처리
-        async function completeOrder(orderId) {
-            try {
-                await database.ref('orders/' + orderId).remove();
-                // 로컬 배열에서도 제거
-                currentOrders = currentOrders.filter(order => order.id !== orderId);
-                updateOrdersList();
-            } catch (error) {
-                console.error('주문 완료 처리 오류:', error);
-                alert('주문 완료 처리 중 오류가 발생했습니다.');
-            }
+        function completeOrder(orderId) {
+            currentOrders = currentOrders.filter(order => order.id !== orderId);
+            saveOrders();
+            updateOrdersList();
         }
 
         // 주문 번호 초기화
-        async function resetOrderNumber() {
-            if (confirm('주문 번호를 1번부터 다시 시작하시겠습니까?')) {
-                try {
-                    orderCounter = 0;
-                    await database.ref('orderCounter').set(0);
-                    alert('주문 번호가 초기화되었습니다. 다음 주문부터 #001부터 시작됩니다.');
-                } catch (error) {
-                    console.error('주문 번호 초기화 오류:', error);
-                    alert('주문 번호 초기화 중 오류가 발생했습니다.');
-                }
-            }
-        }
-
-        // 메뉴 관리 렌더링
-        function renderMenuManagement() {
-            const menuList = document.getElementById('menuList');
-            
-            if (menuItems.length === 0) {
-                menuList.innerHTML = '<p class="text-gray-500 text-center py-8 col-span-full">등록된 메뉴가 없습니다</p>';
-                return;
-            }
-            
-            let html = '';
-            menuItems.forEach(menu => {
-                html += `
-                    <div class="bg-gray-50 p-4 rounded-lg">
-                        <div class="w-full h-24 bg-gray-200 rounded-lg mb-3 overflow-hidden">
-                            ${menu.image ? `<img src="${menu.image}" alt="${menu.name}" class="w-full h-full object-cover">` : '<div class="w-full h-full flex items-center justify-center text-gray-400"><i class="fas fa-coffee text-2xl"></i></div>'}
-                        </div>
-                        <h4 class="font-bold mb-1">${menu.name}</h4>
-                        <p class="text-sm text-gray-600 mb-3">${menu.price === 0 ? '무료' : menu.price.toLocaleString() + '원'}</p>
-                        <button onclick="deleteMenu('${menu.id}')" class="w-full bg-red-500 text-white py-2 rounded-lg hover:bg-red-600 transition-colors">
-                            <i class="fas fa-trash"></i> 삭제
-                        </button>
-                    </div>
-                `;
-            });
-            
-            menuList.innerHTML = html;
-        }
-
-        // 메뉴 추가
-        async function addMenu() {
-            const name = document.getElementById('menuName').value.trim();
-            const price = parseInt(document.getElementById('menuPrice').value) || 0;
-            const imageFile = document.getElementById('menuImage').files[0];
-            
-            if (!name) {
-                alert('메뉴 이름을 입력해주세요.');
-                return;
-            }
-            
-            const newMenu = {
-                name: name,
-                price: price,
-                image: null
-            };
-            
-            try {
-                if (imageFile) {
-                    // 이미지를 Base64로 변환
-                    const base64Image = await fileToBase64(imageFile);
-                    newMenu.image = base64Image;
-                }
-                
-                // Firebase에 메뉴 저장
-                const menuId = 'menu_' + Date.now();
-                await database.ref('menus/' + menuId).set(newMenu);
-                
-                // 폼 초기화
-                document.getElementById('menuName').value = '';
-                document.getElementById('menuPrice').value = '';
-                document.getElementById('menuImage').value = '';
-                
-                alert('메뉴가 등록되었습니다.');
-                
-            } catch (error) {
-                console.error('메뉴 추가 오류:', error);
-                alert('메뉴 등록 중 오류가 발생했습니다.');
-            }
-        }
-
-        // 파일을 Base64로 변환
-        function fileToBase64(file) {
-            return new Promise((resolve, reject) => {
-                const reader = new FileReader();
-                reader.readAsDataURL(file);
-                reader.onload = () => resolve(reader.result);
-                reader.onerror = error => reject(error);
-            });
-        }
-
-        // 메뉴 삭제
-        async function deleteMenu(menuId) {
-            if (confirm('정말로 이 메뉴를 삭제하시겠습니까?')) {
-                try {
-                    await database.ref('menus/' + menuId).remove();
-                    alert('메뉴가 삭제되었습니다.');
-                } catch (error) {
-                    console.error('메뉴 삭제 오류:', error);
-                    alert('메뉴 삭제 중 오류가 발생했습니다.');
-                }
+        function resetOrderNumber() {
+            if (confirm('주문 번호를 1번부터 다시 시작하시겠습니까? 현재 주문 목록도 모두 삭제됩니다.')) {
+                orderCounter = 0;
+                currentOrders = [];
+                localStorage.setItem(STORAGE_KEYS.ORDER_COUNTER, '0');
+                saveOrders();
+                updateOrdersList();
+                alert('주문 번호가 초기화되었습니다. 다음 주문부터 #001부터 시작됩니다.');
             }
         }
 
         // 일일 결산 업데이트
         function updateDailyStats() {
+            const dailyStatsDiv = document.getElementById('dailyStats');
+            if (!dailyStatsDiv) return;
+            
             const today = new Date().toDateString();
+            const todayStats = dailyStats[today] || {};
+            
+            if (Object.keys(todayStats).length === 0) {
+                dailyStatsDiv.innerHTML = '<p class="text-gray-500 text-center py-8">오늘 판매된 메뉴가 없습니다</p>';
+                return;
+            }
+            
+            let totalQuantity = 0;
+            let totalRevenue = 0;
+            
+            // 오늘의 주문에서 매출 계산
             const todayOrders = currentOrders.filter(order => 
                 new Date(order.timestamp).toDateString() === today
             );
             
-            const todayStats = {};
-            let totalOrders = 0;
-            let totalRevenue = 0;
-            
             todayOrders.forEach(order => {
                 totalRevenue += order.total;
-                order.items.forEach(item => {
-                    if (!todayStats[item.name]) {
-                        todayStats[item.name] = 0;
-                    }
-                    todayStats[item.name] += item.quantity;
-                    totalOrders += item.quantity;
-                });
             });
             
-            const dailyStatsDiv = document.getElementById('dailyStats');
-            if (!dailyStatsDiv) return;
+            Object.values(todayStats).forEach(quantity => {
+                totalQuantity += quantity;
+            });
             
-            if (Object.keys(todayStats).length === 0) {
-                dailyStatsDiv.innerHTML = '<p class="text-gray-500 text-center py-8">오늘 주문이 없습니다</p>';
-                return;
-            }
-            
-            let html = '<h3 class="text-lg font-bold mb-4">오늘의 판매 현황 (실시간)</h3>';
+            let html = '<h3 class="text-lg font-bold mb-4">오늘의 판매 현황</h3>';
             html += `
-                <div class="grid grid-cols-2 gap-4 mb-4">
-                    <div class="text-center">
-                        <div class="text-2xl font-bold text-blue-600">${totalOrders}개</div>
-                        <div class="text-sm text-gray-600">총 주문 수</div>
+                <div class="grid grid-cols-2 gap-4 mb-6">
+                    <div class="bg-blue-50 p-4 rounded-lg text-center">
+                        <div class="text-2xl font-bold text-blue-600">${totalQuantity}개</div>
+                        <div class="text-sm text-gray-600">총 판매 수량</div>
                     </div>
-                    <div class="text-center">
+                    <div class="bg-green-50 p-4 rounded-lg text-center">
                         <div class="text-2xl font-bold text-green-600">${totalRevenue.toLocaleString()}원</div>
                         <div class="text-sm text-gray-600">총 매출</div>
                     </div>
@@ -958,101 +989,58 @@
             }
             
             dailyStatsDiv.innerHTML = html;
-            
-            // 차트 업데이트
-            updateDailyChart(todayStats);
-        }
-
-        // 일일 차트 업데이트
-        function updateDailyChart(stats) {
-            const ctx = document.getElementById('dailyChart');
-            if (!ctx) return;
-            
-            if (dailyChart) {
-                dailyChart.destroy();
-            }
-            
-            const labels = Object.keys(stats);
-            const data = Object.values(stats);
-            
-            dailyChart = new Chart(ctx, {
-                type: 'bar',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        label: '판매량',
-                        data: data,
-                        backgroundColor: 'rgba(54, 162, 235, 0.2)',
-                        borderColor: 'rgba(54, 162, 235, 1)',
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    scales: {
-                        y: {
-                            beginAtZero: true
-                        }
-                    }
-                }
-            });
         }
 
         // 일일 결산 새로고침
         function refreshDaily() {
+            dailyStats = JSON.parse(localStorage.getItem(STORAGE_KEYS.DAILY_STATS) || '{}');
             updateDailyStats();
         }
 
         // 당일 정산 완료
-        async function completeDailySettlement() {
+        function completeDailySettlement() {
             if (confirm('당일 정산을 완료하시겠습니까? 현재 주문 목록과 주문번호가 초기화됩니다.')) {
-                try {
-                    await database.ref('orders').remove();
-                    await database.ref('orderCounter').set(0);
-                    
-                    currentOrders = [];
-                    orderCounter = 0;
-                    
-                    alert('당일 정산이 완료되었습니다. 새로운 영업을 시작합니다.');
-                    updateOrdersList();
-                    updateDailyStats();
-                    
-                } catch (error) {
-                    console.error('정산 완료 오류:', error);
-                    alert('정산 완료 처리 중 오류가 발생했습니다.');
-                }
+                currentOrders = [];
+                saveOrders();
+                
+                orderCounter = 0;
+                localStorage.setItem(STORAGE_KEYS.ORDER_COUNTER, '0');
+                
+                alert('당일 정산이 완료되었습니다. 새로운 영업을 시작합니다.');
+                updateOrdersList();
+                updateDailyStats();
             }
         }
 
         // 월 결산 렌더링
         function renderMonthlyStats() {
-            loadStats().then(() => {
-                const monthlyStatsDiv = document.getElementById('monthlyStats');
-                
-                if (Object.keys(monthlyStats).length === 0) {
-                    monthlyStatsDiv.innerHTML = '<p class="text-gray-500 text-center py-8">월별 데이터가 없습니다</p>';
-                    return;
-                }
-                
-                let html = '<h3 class="text-lg font-bold mb-4">월별 판매 현황</h3>';
-                
-                const months = Object.keys(monthlyStats).sort().reverse();
-                
-                html += '<div class="flex flex-wrap gap-2 mb-4">';
-                months.forEach((month, index) => {
-                    html += `<button onclick="showMonthData('${month}')" class="month-tab px-4 py-2 rounded-lg ${index === 0 ? 'bg-blue-500 text-white' : 'bg-gray-200'}" id="month-${month}">${month}</button>`;
-                });
-                html += '</div>';
-                
-                html += '<div id="monthDataContainer"></div>';
-                
-                monthlyStatsDiv.innerHTML = html;
-                
-                if (months.length > 0) {
-                    showMonthData(months[0]);
-                }
+            const monthlyStatsDiv = document.getElementById('monthlyStats');
+            if (!monthlyStatsDiv) return;
+            
+            monthlyStats = JSON.parse(localStorage.getItem(STORAGE_KEYS.MONTHLY_STATS) || '{}');
+            
+            if (Object.keys(monthlyStats).length === 0) {
+                monthlyStatsDiv.innerHTML = '<p class="text-gray-500 text-center py-8">월별 데이터가 없습니다</p>';
+                return;
+            }
+            
+            let html = '<h3 class="text-lg font-bold mb-4">월별 판매 현황</h3>';
+            
+            const months = Object.keys(monthlyStats).sort().reverse();
+            
+            html += '<div class="flex flex-wrap gap-2 mb-4">';
+            months.forEach((month, index) => {
+                html += `<button onclick="showMonthData('${month}')" class="month-tab px-4 py-2 rounded-lg ${index === 0 ? 'bg-blue-500 text-white' : 'bg-gray-200'}" id="month-${month}">${month}</button>`;
             });
+            html += '</div>';
+            
+            html += '<div id="monthDataContainer"></div>';
+            
+            monthlyStatsDiv.innerHTML = html;
+            
+            if (months.length > 0) {
+                showMonthData(months[0]);
+            }
         }
 
         // 월별 데이터 표시
@@ -1092,67 +1080,15 @@
             html = `<div class="mb-4"><div class="text-xl font-bold text-green-600">총 판매량: ${totalSales}개</div></div>` + html;
             
             container.innerHTML = html;
-            
-            // 차트 업데이트
-            updateMonthlyChart(monthData);
-        }
-
-        // 월별 차트 업데이트
-        function updateMonthlyChart(stats) {
-            const ctx = document.getElementById('monthlyChart');
-            if (!ctx) return;
-            
-            if (monthlyChart) {
-                monthlyChart.destroy();
-            }
-            
-            const labels = Object.keys(stats);
-            const data = Object.values(stats);
-            
-            monthlyChart = new Chart(ctx, {
-                type: 'pie',
-                data: {
-                    labels: labels,
-                    datasets: [{
-                        data: data,
-                        backgroundColor: [
-                            'rgba(255, 99, 132, 0.2)',
-                            'rgba(54, 162, 235, 0.2)',
-                            'rgba(255, 205, 86, 0.2)',
-                            'rgba(75, 192, 192, 0.2)',
-                            'rgba(153, 102, 255, 0.2)',
-                            'rgba(255, 159, 64, 0.2)'
-                        ],
-                        borderColor: [
-                            'rgba(255, 99, 132, 1)',
-                            'rgba(54, 162, 235, 1)',
-                            'rgba(255, 205, 86, 1)',
-                            'rgba(75, 192, 192, 1)',
-                            'rgba(153, 102, 255, 1)',
-                            'rgba(255, 159, 64, 1)'
-                        ],
-                        borderWidth: 1
-                    }]
-                },
-                options: {
-                    responsive: true,
-                    maintainAspectRatio: false
-                }
-            });
         }
 
         // 월 결산 초기화
-        async function resetMonthlyData() {
+        function resetMonthlyData() {
             if (confirm('월 결산 데이터를 모두 초기화하시겠습니까? 이 작업은 되돌릴 수 없습니다.')) {
-                try {
-                    await database.ref('monthlyStats').remove();
-                    monthlyStats = {};
-                    renderMonthlyStats();
-                    alert('월 결산 데이터가 초기화되었습니다.');
-                } catch (error) {
-                    console.error('월 결산 초기화 오류:', error);
-                    alert('월 결산 초기화 중 오류가 발생했습니다.');
-                }
+                monthlyStats = {};
+                localStorage.setItem(STORAGE_KEYS.MONTHLY_STATS, JSON.stringify(monthlyStats));
+                renderMonthlyStats();
+                alert('월 결산 데이터가 초기화되었습니다.');
             }
         }
 
