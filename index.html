@@ -4,8 +4,8 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>계산공업고등학교 식품생명과학과 카페 키오스크</title>
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+    <link href="https://cdn.jsdelivr.net/npm/tailwindcss@2.2.19/dist/tailwind.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@fortawesome/fontawesome-free@6.4.0/css/all.min.css">
     
     <style>
         body {
@@ -104,17 +104,36 @@
             border-radius: 20px;
             font-size: 12px;
             z-index: 1000;
+            animation: pulse 2s infinite;
         }
         
         .sync-indicator.syncing {
             background: #f59e0b;
+        }
+        
+        .sync-indicator.error {
+            background: #ef4444;
+        }
+        
+        @keyframes pulse {
+            0%, 100% { opacity: 1; }
+            50% { opacity: 0.7; }
+        }
+        
+        .refresh-btn {
+            animation: spin 0.5s linear;
+        }
+        
+        @keyframes spin {
+            from { transform: rotate(0deg); }
+            to { transform: rotate(360deg); }
         }
     </style>
 </head>
 <body>
     <!-- 동기화 상태 표시 -->
     <div id="syncIndicator" class="sync-indicator">
-        <i class="fas fa-wifi"></i> 실시간 연동
+        <i class="fas fa-wifi"></i> 실시간 연동 활성화
     </div>
 
     <!-- 주문 모드 -->
@@ -123,7 +142,7 @@
         <div class="text-center mb-8">
             <h1 class="text-4xl font-bold text-white mb-2">계산공업고등학교</h1>
             <h2 class="text-2xl text-white opacity-90">식품생명과학과 카페</h2>
-            <p class="text-white opacity-75 text-sm mt-2">실시간 다기기 연동 키오스크</p>
+            <p class="text-white opacity-75 text-sm mt-2">실시간 다기기 연동 키오스크 (기기 ID: <span id="deviceId"></span>)</p>
             <button onclick="showAdminLogin()" class="mt-4 text-white opacity-70 hover:opacity-100 transition-opacity">
                 <i class="fas fa-cog"></i> 관리자 모드
             </button>
@@ -182,7 +201,7 @@
             <div class="flex justify-between items-center">
                 <div>
                     <h1 class="text-2xl font-bold">관리자 모드</h1>
-                    <p class="text-sm opacity-90">실시간 다기기 연동 활성화</p>
+                    <p class="text-sm opacity-90">실시간 다기기 연동 활성화 (기기 ID: <span id="adminDeviceId"></span>)</p>
                 </div>
                 <button onclick="exitAdminMode()" class="bg-white bg-opacity-20 px-4 py-2 rounded-lg hover:bg-opacity-30 transition-colors">
                     <i class="fas fa-sign-out-alt"></i> 나가기
@@ -205,13 +224,21 @@
                 <div class="flex justify-between items-center mb-4">
                     <h2 class="text-2xl font-bold">실시간 주문 확인</h2>
                     <div class="flex gap-2">
-                        <button onclick="refreshOrders()" class="btn-primary">
+                        <button onclick="refreshOrders()" class="btn-primary" id="refreshButton">
                             <i class="fas fa-sync-alt"></i> 주문 새로고침
                         </button>
                         <button onclick="resetOrderNumber()" class="bg-orange-500 text-white px-4 py-2 rounded-lg hover:bg-orange-600 transition-colors">
                             <i class="fas fa-redo"></i> 주문 번호 초기화
                         </button>
                     </div>
+                </div>
+                <div class="bg-blue-50 p-3 rounded-lg mb-4">
+                    <p class="text-sm text-blue-800">
+                        <i class="fas fa-info-circle"></i> 
+                        마지막 동기화: <span id="lastSync">-</span> | 
+                        총 주문 수: <span id="totalOrders">0</span> | 
+                        연결된 기기: <span id="connectedDevices">1</span>개
+                    </p>
                 </div>
                 <div id="ordersList" class="space-y-3">
                     <p class="text-gray-500 text-center py-8">주문이 없습니다</p>
@@ -283,7 +310,7 @@
             </div>
             <h3 class="text-2xl font-bold mb-2">주문이 완료되었습니다!</h3>
             <p class="text-lg mb-2">주문번호: <span id="orderNumber" class="font-bold text-blue-600"></span></p>
-            <p class="text-sm text-gray-600 mb-4">관리자 화면에서 실시간으로 확인 가능합니다</p>
+            <p class="text-sm text-gray-600 mb-4">모든 연결된 기기에서 실시간으로 확인 가능합니다</p>
             <button onclick="hideOrderCompleted()" class="btn-primary">확인</button>
         </div>
     </div>
@@ -296,10 +323,14 @@
         let currentOrders = [];
         let dailyStats = JSON.parse(localStorage.getItem('dailyStats') || '{}');
         let monthlyStats = JSON.parse(localStorage.getItem('monthlyStats') || '{}');
+        let deviceId = 'device_' + Math.random().toString(36).substr(2, 9);
+        let broadcastChannel = null;
+        let lastSyncTime = new Date();
 
         // 실시간 동기화를 위한 글로벌 저장소
         let globalOrderKey = 'globalCafeOrders';
         let globalMenuKey = 'globalCafeMenus';
+        let syncStatusKey = 'cafeSyncStatus';
 
         // 초기 메뉴 데이터
         const defaultMenus = [
@@ -311,8 +342,110 @@
             { id: 'menu6', name: '사과주스', price: 2500, image: 'data:image/svg+xml;base64,PHN2ZyB3aWR0aD0iMTIwIiBoZWlnaHQ9IjEyMCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciPjxjaXJjbGUgY3g9IjEyIiBjeT0iMTIiIHI9IjgiIGZpbGw9IiNmZjU3MjIiLz48L3N2Zz4=' }
         ];
 
+        // BroadcastChannel 초기화
+        function initializeBroadcastChannel() {
+            try {
+                if ('BroadcastChannel' in window) {
+                    broadcastChannel = new BroadcastChannel('cafe-kiosk-sync');
+                    broadcastChannel.onmessage = function(event) {
+                        handleBroadcastMessage(event.data);
+                    };
+                    console.log('BroadcastChannel 초기화 완료');
+                } else {
+                    console.log('BroadcastChannel 지원하지 않음, localStorage 이벤트 사용');
+                }
+            } catch (error) {
+                console.log('BroadcastChannel 초기화 실패:', error);
+            }
+        }
+
+        // 브로드캐스트 메시지 처리
+        function handleBroadcastMessage(data) {
+            console.log('브로드캐스트 메시지 수신:', data);
+            
+            switch (data.type) {
+                case 'ORDER_UPDATE':
+                    currentOrders = data.orders;
+                    updateOrdersList();
+                    updateDailyStats();
+                    updateSyncIndicator('success', '주문 동기화 완료');
+                    break;
+                    
+                case 'MENU_UPDATE':
+                    menuItems = data.menus;
+                    renderMenuGrid();
+                    renderMenuManagement();
+                    updateSyncIndicator('success', '메뉴 동기화 완료');
+                    break;
+                    
+                case 'REFRESH_REQUEST':
+                    broadcastUpdate();
+                    break;
+            }
+            
+            lastSyncTime = new Date();
+            updateLastSyncTime();
+        }
+
+        // 브로드캐스트 업데이트 전송
+        function broadcastUpdate() {
+            if (broadcastChannel) {
+                try {
+                    // 주문 업데이트 브로드캐스트
+                    broadcastChannel.postMessage({
+                        type: 'ORDER_UPDATE',
+                        orders: currentOrders,
+                        deviceId: deviceId,
+                        timestamp: Date.now()
+                    });
+                    
+                    // 메뉴 업데이트 브로드캐스트
+                    broadcastChannel.postMessage({
+                        type: 'MENU_UPDATE',
+                        menus: menuItems,
+                        deviceId: deviceId,
+                        timestamp: Date.now()
+                    });
+                    
+                    console.log('브로드캐스트 업데이트 전송 완료');
+                } catch (error) {
+                    console.error('브로드캐스트 전송 실패:', error);
+                }
+            }
+        }
+
+        // localStorage 이벤트 리스너
+        function initializeStorageListener() {
+            window.addEventListener('storage', function(e) {
+                console.log('Storage 변경 감지:', e.key);
+                
+                if (e.key === globalOrderKey) {
+                    currentOrders = JSON.parse(e.newValue || '[]');
+                    updateOrdersList();
+                    updateDailyStats();
+                    updateSyncIndicator('success', '주문 동기화 완료');
+                } else if (e.key === globalMenuKey) {
+                    menuItems = JSON.parse(e.newValue || '[]');
+                    renderMenuGrid();
+                    renderMenuManagement();
+                    updateSyncIndicator('success', '메뉴 동기화 완료');
+                }
+                
+                lastSyncTime = new Date();
+                updateLastSyncTime();
+            });
+        }
+
         // 초기화
         function initializeData() {
+            // 기기 ID 표시
+            document.getElementById('deviceId').textContent = deviceId;
+            document.getElementById('adminDeviceId').textContent = deviceId;
+            
+            // BroadcastChannel 및 Storage 리스너 초기화
+            initializeBroadcastChannel();
+            initializeStorageListener();
+            
             // 메뉴 초기화
             let storedMenus = JSON.parse(localStorage.getItem(globalMenuKey) || '[]');
             if (storedMenus.length === 0) {
@@ -327,24 +460,92 @@
             
             renderMenuGrid();
             updateCartDisplay();
+            updateOrdersList();
+            updateDailyStats();
+            
+            // 동기화 상태 업데이트
+            updateSyncIndicator('success', '시스템 초기화 완료');
+            updateLastSyncTime();
+            
+            // 초기 브로드캐스트
+            setTimeout(() => {
+                broadcastUpdate();
+            }, 1000);
         }
 
-        // 실시간 동기화 체크
-        function checkForUpdates() {
-            // 주문 업데이트 체크
-            const latestOrders = JSON.parse(localStorage.getItem(globalOrderKey) || '[]');
-            if (JSON.stringify(latestOrders) !== JSON.stringify(currentOrders)) {
-                currentOrders = latestOrders;
-                updateOrdersList();
-                updateDailyStats();
+        // 동기화 상태 표시 업데이트
+        function updateSyncIndicator(status = 'success', message = '실시간 연동 활성화') {
+            const indicator = document.getElementById('syncIndicator');
+            
+            indicator.className = 'sync-indicator';
+            
+            if (status === 'syncing') {
+                indicator.classList.add('syncing');
+                indicator.innerHTML = '<i class="fas fa-sync-alt fa-spin"></i> 동기화 중...';
+            } else if (status === 'error') {
+                indicator.classList.add('error');
+                indicator.innerHTML = '<i class="fas fa-exclamation-triangle"></i> 동기화 오류';
+            } else {
+                indicator.innerHTML = '<i class="fas fa-wifi"></i> ' + message;
             }
+            
+            // 일시적 상태 메시지는 3초 후 원래대로
+            if (message !== '실시간 연동 활성화') {
+                setTimeout(() => {
+                    indicator.className = 'sync-indicator';
+                    indicator.innerHTML = '<i class="fas fa-wifi"></i> 실시간 연동 활성화';
+                }, 3000);
+            }
+        }
 
-            // 메뉴 업데이트 체크
-            const latestMenus = JSON.parse(localStorage.getItem(globalMenuKey) || '[]');
-            if (JSON.stringify(latestMenus) !== JSON.stringify(menuItems)) {
-                menuItems = latestMenus;
-                renderMenuGrid();
-                renderMenuManagement();
+        // 마지막 동기화 시간 업데이트
+        function updateLastSyncTime() {
+            const lastSyncElement = document.getElementById('lastSync');
+            const totalOrdersElement = document.getElementById('totalOrders');
+            
+            if (lastSyncElement) {
+                lastSyncElement.textContent = lastSyncTime.toLocaleTimeString();
+            }
+            
+            if (totalOrdersElement) {
+                totalOrdersElement.textContent = currentOrders.length;
+            }
+        }
+
+        // 실시간 동기화 체크 (강화된 버전)
+        function checkForUpdates() {
+            try {
+                // localStorage에서 최신 데이터 확인
+                const latestOrders = JSON.parse(localStorage.getItem(globalOrderKey) || '[]');
+                const latestMenus = JSON.parse(localStorage.getItem(globalMenuKey) || '[]');
+                
+                let hasUpdates = false;
+                
+                // 주문 업데이트 체크
+                if (JSON.stringify(latestOrders) !== JSON.stringify(currentOrders)) {
+                    currentOrders = latestOrders;
+                    updateOrdersList();
+                    updateDailyStats();
+                    hasUpdates = true;
+                }
+                
+                // 메뉴 업데이트 체크
+                if (JSON.stringify(latestMenus) !== JSON.stringify(menuItems)) {
+                    menuItems = latestMenus;
+                    renderMenuGrid();
+                    renderMenuManagement();
+                    hasUpdates = true;
+                }
+                
+                if (hasUpdates) {
+                    lastSyncTime = new Date();
+                    updateLastSyncTime();
+                    updateSyncIndicator('success', '데이터 동기화 완료');
+                }
+                
+            } catch (error) {
+                console.error('동기화 체크 중 오류:', error);
+                updateSyncIndicator('error');
             }
         }
 
@@ -352,18 +553,22 @@
         document.addEventListener('DOMContentLoaded', function() {
             initializeData();
             
-            // 1초마다 동기화 체크
-            setInterval(checkForUpdates, 1000);
+            // 더 빈번한 동기화 체크 (500ms마다)
+            setInterval(checkForUpdates, 500);
             
-            updateSyncIndicator();
+            // 주기적인 브로드캐스트 (10초마다)
+            setInterval(() => {
+                broadcastUpdate();
+            }, 10000);
+            
+            // 페이지 가시성 변경 시 동기화
+            document.addEventListener('visibilitychange', function() {
+                if (!document.hidden) {
+                    checkForUpdates();
+                    broadcastUpdate();
+                }
+            });
         });
-
-        // 동기화 상태 표시
-        function updateSyncIndicator() {
-            const indicator = document.getElementById('syncIndicator');
-            indicator.innerHTML = '<i class="fas fa-wifi"></i> 실시간 연동 활성화';
-            indicator.className = 'sync-indicator';
-        }
 
         // 메뉴 그리드 렌더링
         function renderMenuGrid() {
@@ -387,7 +592,6 @@
                     <p class="text-blue-600 font-bold">${menu.price === 0 ? '무료' : menu.price.toLocaleString() + '원'}</p>
                 `;
                 
-                // 클릭 이벤트 추가 (올바른 메뉴 정보 전달)
                 menuCard.addEventListener('click', function() {
                     addToCart(menu.id, menu.name, menu.price);
                 });
@@ -396,7 +600,7 @@
             });
         }
 
-        // 장바구니에 추가 (수정: 올바른 메뉴 식별)
+        // 장바구니에 추가
         function addToCart(menuId, menuName, menuPrice) {
             const existingItem = currentCart.find(item => item.id === menuId);
             
@@ -480,7 +684,7 @@
             updateCartDisplay();
         }
 
-        // 주문하기 (실시간 동기화 수정)
+        // 주문하기 (강화된 동기화)
         function placeOrder() {
             if (currentCart.length === 0) return;
             
@@ -488,22 +692,39 @@
             const orderNumber = orderCounter.toString().padStart(3, '0');
             
             const order = {
-                id: Date.now().toString(),
+                id: Date.now().toString() + '_' + deviceId,
                 orderNumber: orderCounter,
                 number: orderNumber,
                 items: [...currentCart],
                 timestamp: new Date().toISOString(),
                 total: currentCart.reduce((sum, item) => sum + (item.price * item.quantity), 0),
-                status: 'pending'
+                status: 'pending',
+                deviceId: deviceId
             };
             
-            // 글로벌 주문 목록에 추가
-            currentOrders.push(order);
+            // 로컬 주문 목록에 추가
+            currentOrders.unshift(order); // 최신 주문이 맨 위에 오도록
+            
+            // 스토리지에 즉시 저장
             localStorage.setItem(globalOrderKey, JSON.stringify(currentOrders));
             localStorage.setItem('orderCounter', orderCounter.toString());
             
+            // 브로드캐스트로 다른 기기에 알림
+            if (broadcastChannel) {
+                broadcastChannel.postMessage({
+                    type: 'ORDER_UPDATE',
+                    orders: currentOrders,
+                    deviceId: deviceId,
+                    timestamp: Date.now()
+                });
+            }
+            
             // 통계 업데이트
             updateStats(order);
+            
+            // UI 업데이트
+            updateOrdersList();
+            updateSyncIndicator('success', '주문 전송 완료');
             
             // 주문 완료 표시
             document.getElementById('orderNumber').textContent = '#' + orderNumber;
@@ -512,6 +733,8 @@
             
             // 장바구니 비우기
             clearCart();
+            
+            console.log('주문 완료:', order);
         }
 
         // 통계 업데이트
@@ -547,24 +770,34 @@
             localStorage.setItem('monthlyStats', JSON.stringify(monthlyStats));
         }
 
-        // 주문 목록 업데이트 (수정: 새로고침 버튼 추가)
+        // 주문 목록 업데이트 (강화된 버전)
         function updateOrdersList() {
             const ordersList = document.getElementById('ordersList');
             
+            if (!ordersList) return;
+            
             if (currentOrders.length === 0) {
                 ordersList.innerHTML = '<p class="text-gray-500 text-center py-8">주문이 없습니다</p>';
+                updateLastSyncTime();
                 return;
             }
             
+            // 최신 주문부터 표시 (시간순 내림차순)
+            const sortedOrders = [...currentOrders].sort((a, b) => new Date(b.timestamp) - new Date(a.timestamp));
+            
             let html = '';
-            currentOrders.forEach(order => {
-                const isNew = (Date.now() - new Date(order.timestamp).getTime()) < 30000; // 30초 이내 주문
+            sortedOrders.forEach(order => {
+                const orderTime = new Date(order.timestamp);
+                const isNew = (Date.now() - orderTime.getTime()) < 30000; // 30초 이내 주문
+                const isFromThisDevice = order.deviceId === deviceId;
+                
                 html += `
                     <div class="order-item ${isNew ? 'new-order' : ''}">
                         <div class="flex justify-between items-start mb-3">
                             <div>
                                 <h4 class="font-bold text-lg">주문번호: #${order.number}</h4>
-                                <p class="text-gray-600 text-sm">${new Date(order.timestamp).toLocaleString()}</p>
+                                <p class="text-gray-600 text-sm">${orderTime.toLocaleString()}</p>
+                                <p class="text-xs text-gray-500">기기: ${isFromThisDevice ? '현재 기기' : order.deviceId || '알 수 없음'}</p>
                                 ${isNew ? '<span class="text-xs bg-green-100 text-green-800 px-2 py-1 rounded-full">새 주문</span>' : ''}
                             </div>
                             <button onclick="completeOrder('${order.id}')" class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 transition-colors">
@@ -590,19 +823,77 @@
             });
             
             ordersList.innerHTML = html;
+            updateLastSyncTime();
         }
 
-        // 주문 새로고침 (수정)
+        // 주문 새로고침 (완전히 수정된 버전)
         function refreshOrders() {
-            currentOrders = JSON.parse(localStorage.getItem(globalOrderKey) || '[]');
-            updateOrdersList();
+            const refreshButton = document.getElementById('refreshButton');
+            if (refreshButton) {
+                // 새로고침 버튼 애니메이션
+                const icon = refreshButton.querySelector('i');
+                icon.classList.add('refresh-btn');
+                
+                setTimeout(() => {
+                    icon.classList.remove('refresh-btn');
+                }, 500);
+            }
+            
+            updateSyncIndicator('syncing');
+            
+            try {
+                // localStorage에서 최신 데이터 강제로 다시 로드
+                currentOrders = JSON.parse(localStorage.getItem(globalOrderKey) || '[]');
+                
+                // 브로드캐스트로 다른 기기에서 새로고침 요청
+                if (broadcastChannel) {
+                    broadcastChannel.postMessage({
+                        type: 'REFRESH_REQUEST',
+                        deviceId: deviceId,
+                        timestamp: Date.now()
+                    });
+                }
+                
+                // UI 업데이트
+                updateOrdersList();
+                updateDailyStats();
+                
+                // 성공 피드백
+                updateSyncIndicator('success', '새로고침 완료');
+                
+                console.log('주문 새로고침 완료:', currentOrders.length, '개 주문');
+                
+            } catch (error) {
+                console.error('주문 새로고침 실패:', error);
+                updateSyncIndicator('error');
+            }
         }
 
-        // 주문 완료 처리 (실시간 동기화)
+        // 주문 완료 처리 (강화된 동기화)
         function completeOrder(orderId) {
-            currentOrders = currentOrders.filter(order => order.id !== orderId);
-            localStorage.setItem(globalOrderKey, JSON.stringify(currentOrders));
-            updateOrdersList();
+            if (confirm('이 주문을 완료 처리하시겠습니까?')) {
+                // 주문 제거
+                currentOrders = currentOrders.filter(order => order.id !== orderId);
+                
+                // 스토리지 업데이트
+                localStorage.setItem(globalOrderKey, JSON.stringify(currentOrders));
+                
+                // 브로드캐스트로 다른 기기에 알림
+                if (broadcastChannel) {
+                    broadcastChannel.postMessage({
+                        type: 'ORDER_UPDATE',
+                        orders: currentOrders,
+                        deviceId: deviceId,
+                        timestamp: Date.now()
+                    });
+                }
+                
+                // UI 업데이트
+                updateOrdersList();
+                updateSyncIndicator('success', '주문 완료 처리됨');
+                
+                console.log('주문 완료 처리:', orderId);
+            }
         }
 
         // 주문 번호 초기화
@@ -617,6 +908,8 @@
         // 메뉴 관리 렌더링
         function renderMenuManagement() {
             const menuList = document.getElementById('menuList');
+            
+            if (!menuList) return;
             
             if (menuItems.length === 0) {
                 menuList.innerHTML = '<p class="text-gray-500 text-center py-8 col-span-full">등록된 메뉴가 없습니다</p>';
@@ -642,7 +935,7 @@
             menuList.innerHTML = html;
         }
 
-        // 메뉴 추가
+        // 메뉴 추가 (동기화 강화)
         function addMenu() {
             const name = document.getElementById('menuName').value.trim();
             const price = parseInt(document.getElementById('menuPrice').value) || 0;
@@ -654,7 +947,7 @@
             }
             
             const newMenu = {
-                id: 'menu' + Date.now(),
+                id: 'menu' + Date.now() + '_' + deviceId,
                 name: name,
                 price: price,
                 image: null
@@ -673,8 +966,21 @@
         }
 
         function finishAddingMenu(newMenu) {
+            // 메뉴 추가
             menuItems.push(newMenu);
+            
+            // 스토리지 업데이트
             localStorage.setItem(globalMenuKey, JSON.stringify(menuItems));
+            
+            // 브로드캐스트로 다른 기기에 알림
+            if (broadcastChannel) {
+                broadcastChannel.postMessage({
+                    type: 'MENU_UPDATE',
+                    menus: menuItems,
+                    deviceId: deviceId,
+                    timestamp: Date.now()
+                });
+            }
             
             // 폼 초기화
             document.getElementById('menuName').value = '';
@@ -685,16 +991,31 @@
             renderMenuManagement();
             renderMenuGrid();
             
+            updateSyncIndicator('success', '메뉴 추가됨');
             alert('메뉴가 등록되었습니다.');
         }
 
-        // 메뉴 삭제
+        // 메뉴 삭제 (동기화 강화)
         function deleteMenu(menuId) {
             if (confirm('정말로 이 메뉴를 삭제하시겠습니까?')) {
                 menuItems = menuItems.filter(menu => menu.id !== menuId);
+                
+                // 스토리지 업데이트
                 localStorage.setItem(globalMenuKey, JSON.stringify(menuItems));
+                
+                // 브로드캐스트로 다른 기기에 알림
+                if (broadcastChannel) {
+                    broadcastChannel.postMessage({
+                        type: 'MENU_UPDATE',
+                        menus: menuItems,
+                        deviceId: deviceId,
+                        timestamp: Date.now()
+                    });
+                }
+                
                 renderMenuManagement();
                 renderMenuGrid();
+                updateSyncIndicator('success', '메뉴 삭제됨');
             }
         }
 
@@ -707,6 +1028,7 @@
             
             const todayStats = {};
             let totalOrders = 0;
+            let totalRevenue = 0;
             
             todayOrders.forEach(order => {
                 order.items.forEach(item => {
@@ -716,6 +1038,7 @@
                     todayStats[item.name] += item.quantity;
                     totalOrders += item.quantity;
                 });
+                totalRevenue += order.total;
             });
             
             const dailyStatsDiv = document.getElementById('dailyStats');
@@ -727,8 +1050,20 @@
             }
             
             let html = '<h3 class="text-lg font-bold mb-4">오늘의 판매 현황 (실시간)</h3>';
-            html += `<div class="mb-4"><div class="text-2xl font-bold text-blue-600">총 주문 수: ${totalOrders}개</div></div>`;
+            html += `
+                <div class="grid grid-cols-2 gap-4 mb-4">
+                    <div class="bg-blue-50 p-4 rounded-lg">
+                        <div class="text-2xl font-bold text-blue-600">${totalOrders}개</div>
+                        <div class="text-sm text-gray-600">총 주문 수</div>
+                    </div>
+                    <div class="bg-green-50 p-4 rounded-lg">
+                        <div class="text-2xl font-bold text-green-600">${totalRevenue.toLocaleString()}원</div>
+                        <div class="text-sm text-gray-600">총 매출</div>
+                    </div>
+                </div>
+            `;
             
+            html += '<h4 class="text-md font-bold mb-2">메뉴별 판매량</h4>';
             for (const [menuName, quantity] of Object.entries(todayStats)) {
                 html += `
                     <div class="flex justify-between items-center py-2 border-b">
@@ -744,6 +1079,7 @@
         // 일일 결산 새로고침
         function refreshDaily() {
             updateDailyStats();
+            updateSyncIndicator('success', '일일 결산 새로고침');
         }
 
         // 당일 정산 완료
@@ -757,9 +1093,20 @@
                 orderCounter = 0;
                 localStorage.setItem('orderCounter', '0');
                 
+                // 브로드캐스트로 다른 기기에 알림
+                if (broadcastChannel) {
+                    broadcastChannel.postMessage({
+                        type: 'ORDER_UPDATE',
+                        orders: currentOrders,
+                        deviceId: deviceId,
+                        timestamp: Date.now()
+                    });
+                }
+                
                 alert('당일 정산이 완료되었습니다. 새로운 영업을 시작합니다.');
                 updateOrdersList();
                 updateDailyStats();
+                updateSyncIndicator('success', '정산 완료');
             }
         }
 
@@ -767,6 +1114,8 @@
         function renderMonthlyStats() {
             monthlyStats = JSON.parse(localStorage.getItem('monthlyStats') || '{}');
             const monthlyStatsDiv = document.getElementById('monthlyStats');
+            
+            if (!monthlyStatsDiv) return;
             
             if (Object.keys(monthlyStats).length === 0) {
                 monthlyStatsDiv.innerHTML = '<p class="text-gray-500 text-center py-8">월별 데이터가 없습니다</p>';
@@ -809,6 +1158,8 @@
             
             const monthData = monthlyStats[month] || {};
             const container = document.getElementById('monthDataContainer');
+            
+            if (!container) return;
             
             if (Object.keys(monthData).length === 0) {
                 container.innerHTML = '<p class="text-gray-500 text-center py-8">해당 월의 데이터가 없습니다</p>';
@@ -901,8 +1252,15 @@
             });
             
             // 선택된 탭 표시
-            document.getElementById('admin' + tabName.charAt(0).toUpperCase() + tabName.slice(1)).classList.remove('hidden');
-            document.getElementById('tab-' + tabName).classList.add('active');
+            const tabElement = document.getElementById('admin' + tabName.charAt(0).toUpperCase() + tabName.slice(1));
+            if (tabElement) {
+                tabElement.classList.remove('hidden');
+            }
+            
+            const tabButton = document.getElementById('tab-' + tabName);
+            if (tabButton) {
+                tabButton.classList.add('active');
+            }
             
             // 탭별 데이터 로드
             if (tabName === 'orders') {
@@ -922,6 +1280,13 @@
                 if (document.getElementById('adminLogin').classList.contains('flex')) {
                     checkAdminPassword();
                 }
+            }
+        });
+
+        // 페이지 언로드 시 정리
+        window.addEventListener('beforeunload', function() {
+            if (broadcastChannel) {
+                broadcastChannel.close();
             }
         });
     </script>
